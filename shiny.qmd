@@ -159,12 +159,96 @@ Now lets make it interactive
 ggplotly(scatter_plot)
 ```
 
-## 🧩 Challenge 1 
+## 🧩 Challenge 1
 
 Can you add the functionality to your shiny app (new panel) that allows users to pick two census variables to plot on an interactive scatter plot using `ggplotly()` and `stat_cor()`
 
 ```{r}
+ui <- page_sidebar(
+  title = "Hawaii Census Explorer",
 
+  sidebar = sidebar(
+    # Map control
+    selectInput("var", "Choose a variable to map:", choices = oahu_choices),
+    hr(),
+    # Scatterplot controls
+    selectInput("x_var", "Scatterplot X Variable", choices = oahu_choices),
+    selectInput("y_var", "Scatterplot Y Variable", choices = oahu_choices)
+  ),
+
+  # Stack one card on top of the other
+  card(
+    full_screen = TRUE,
+    maplibreOutput("map", height = "500px")
+  ),
+
+  card(
+    full_screen = TRUE,
+    plotlyOutput("scatter_plot", height = "500px")
+  )
+)
+
+server <- function(input, output, session) {
+
+  # --- Map ---
+  output$map <- renderMaplibre({
+    selected_data <- hawaii_data |> 
+      mutate(var_value = .data[[input$var]])
+
+    continuous_scale <- interpolate_palette(
+      data = selected_data,
+      column = "var_value",
+      method = "equal",
+      n = 4,
+      palette = viridisLite::viridis
+    )
+
+    legend_labels <- switch(input$var,
+      "median_income" = get_legend_labels(continuous_scale, digits = 0, prefix = "$"),
+      "pct_bachelors" = get_legend_labels(continuous_scale, digits = 0, suffix = "%"),
+      "median_gross_rent" = get_legend_labels(continuous_scale, digits = 0, prefix = "$"),
+      get_legend_labels(continuous_scale, digits = 0)
+    )
+
+    maplibre(style = carto_style("positron")) |>
+      fit_bounds(selected_data) |>
+      add_fill_layer(
+        id = "tracts",
+        source = selected_data,
+        fill_color = continuous_scale$expression,
+        fill_opacity = 0.75
+      ) |>
+      add_legend(
+        legend_title = names(oahu_choices)[oahu_choices == input$var],
+        values = legend_labels,
+        colors = get_legend_colors(continuous_scale),
+        type = "continuous"
+      )
+  })
+
+  # --- Scatterplot ---
+  output$scatter_plot <- renderPlotly({
+    req(input$x_var, input$y_var)
+
+    plot_data <- hawaii_data |>
+      mutate(x = .data[[input$x_var]],
+             y = .data[[input$y_var]])
+
+    p <- ggplot(plot_data, aes(x = x, y = y)) +
+      geom_point(alpha = 0.6, color = "darkorange") +
+      stat_cor(method = "pearson", label.x.npc = "left", label.y.npc = "top") +
+      labs(
+        x = names(oahu_choices)[oahu_choices == input$x_var],
+        y = names(oahu_choices)[oahu_choices == input$y_var],
+        title = "Scatterplot of Census Variables"
+      ) +
+      theme_minimal()
+
+    ggplotly(p)
+  })
+}
+
+shinyApp(ui, server)
 ```
 
 ## 🧩 Challenge 2
@@ -172,5 +256,65 @@ Can you add the functionality to your shiny app (new panel) that allows users to
 Can you create a shiny app using your LANDSAT_USA_contiguous_and_Hawaii_7d.csv in the data folder that allows users to filter the map by confidence. For example, the user can select from a side dropdown to only show *high* confidence fires, *medium* confidence fires, or *low* confidence fires. Also add a date slider so users can toggle the map by date. Bonus: Can you add a heatmap layer users can toggle on and off?
 
 ```{r}
+# Read and prepare the data
+fires_csv_df <- read_csv("data/LANDSAT_USA_contiguous_and_Hawaii_7d.csv")
 
+# Ensure confidence is lowercase to match standard
+fires_csv_df <- fires_csv_df %>%
+  mutate(
+    confidence = tolower(confidence),
+    acq_date = as.Date(acq_date)
+  )
+
+# Convert to sf object
+fires_sf_all <- st_as_sf(fires_csv_df, coords = c("longitude", "latitude"), crs = 4326)
+
+ui <- fluidPage(
+  titlePanel("LANDSAT Fires (7-Day) - Filter by Confidence and Date"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("confidence_level", "Select Confidence Level:",
+                  choices = c("low", "medium", "high"),
+                  selected = "high"),
+      
+      sliderInput("date_range", "Select Date Range:",
+                  min = min(fires_csv_df$acq_date, na.rm = TRUE),
+                  max = max(fires_csv_df$acq_date, na.rm = TRUE),
+                  value = c(min(fires_csv_df$acq_date, na.rm = TRUE),
+                            max(fires_csv_df$acq_date, na.rm = TRUE)),
+                  timeFormat = "%Y-%m-%d")
+    ),
+    
+    mainPanel(
+      mapboxglOutput("fires_map", height = "600px")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  # Reactive subset of fires
+  filtered_fires <- reactive({
+    fires_sf_all %>%
+      filter(
+        confidence == input$confidence_level,
+        acq_date >= input$date_range[1],
+        acq_date <= input$date_range[2]
+      )
+  })
+  
+  output$fires_map <- renderMapboxgl({
+    mapboxgl(bounds = filtered_fires()) |>
+      add_circle_layer(
+        id = "fire_points",
+        source = filtered_fires(),
+        circle_radius = 3,
+        circle_color = "#FF4500",
+        circle_opacity = 0.7
+      )
+  })
+}
+
+shinyApp(ui, server)
 ```
