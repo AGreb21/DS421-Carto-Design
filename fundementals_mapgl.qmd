@@ -195,7 +195,7 @@ When designing categorical maps: - Choose palettes that are **visually distinct*
 Here’s how we apply quantile classification to Hawaii's Median Income:
 
 ```{r}
-q_class <- step_jenks(
+q_class <- step_equal_interval(
   data = hi_median_income,
   column = "estimate",
   n = 5,
@@ -235,6 +235,8 @@ How does your choice affect the message your map conveys?
 💬 *What looks more balanced? Which palette aligns with your intended story?*
 
 Write 1–2 sentences reflecting on the **cartographic message** your choices imply.
+
+From my understanding of these functions, all three can be very useful depending on your data structure and distribution of how you want to display it on your graphs. With these you are able to group them in equal parts based on number of data points, or data range, or use step_jenks() to optimize your display by minimizing in class variance.
 
 ------------------------------------------------------------------------
 
@@ -281,6 +283,39 @@ Hints : <https://livingwage.mit.edu/states/15>, <https://unitedforalice.org/hawa
 
 Make a binary map, two colors, representing above and below a threshold of median income that you determine based on an outside source like the ones hinted above
 
+The map above this challenge was the variation we did in class with mit as the source for the poverty line, the following changes i made sources the poverty line from united for Alice with 2 adults and 2 children
+
+```{r}
+hi_median_income <- hi_median_income |>
+  mutate(
+    alice_threshold = ifelse(estimate < 97608, "Below Line", "Above Line")
+  )
+```
+
+```{r}
+alice_colors <- c("Below Line" = "#d73027", "Above Line" = "#1a9850")
+
+mapboxgl(bounds = hi_median_income) |>
+  add_fill_layer(
+    id = "hi_tracts",
+    source = hi_median_income,
+    fill_color = match_expr(
+      column = "alice_threshold",
+      values = names(alice_colors),
+      stops = unname(alice_colors)
+    ),
+    fill_opacity = 0.6
+  ) |>
+  add_legend(
+    "Median Income Status",
+    values = names(alice_colors),
+    colors = unname(alice_colors),
+    type = "categorical"
+  )
+
+
+```
+
 ## ✨ Add Interactivity
 
 ```{r}
@@ -321,8 +356,38 @@ Instead of just `estimate`, add other descriptive info in your popup. For exampl
 
 ```{r}
 hi_median_income$popup <- glue(
-  "<strong>Tract:</strong> {hi_median_income$NAME}<br><strong>Median income:</strong> {hi_median_income$estimate}"
+  "<strong>Tract:</strong> {hi_median_income$NAME}<br>
+   <strong>GEOID:</strong> {hi_median_income$GEOID}<br>
+   <strong>Median income:</strong> ${hi_median_income$estimate}"
 )
+
+hi_median_income$tooltip <- glue(
+  "Tract: {hi_median_income$NAME}\nIncome: ${hi_median_income$estimate}"
+)
+
+hi_map |>
+  add_fill_layer(
+    id = "hi_tracts",
+    source = hi_median_income,
+    fill_color = interpolate(
+      column = "estimate",
+      values = c(20000, 250000),
+      stops = c("lightblue", "darkblue"),
+      na_color = "lightgrey"
+    ),
+    fill_opacity = 0.5,
+    popup = "popup",
+    tooltip = "tooltip",
+    hover_options = list(
+      fill_color = "blue",
+      fill_opacity = 1
+    )
+  ) |>
+  add_legend(
+    "Median Income in Hawaii",
+    values = c(20000, 250000),
+    colors = c("lightblue", "darkblue")
+  )
 ```
 
 Bonus: Try replacing `fill_color = "yellow"` with a color of your choice that aligns better with your map’s aesthetic.
@@ -341,8 +406,60 @@ Load median income, rent, or internet access for a different state using `tidyce
 | B25077_001 | Median home value        |
 | B28002_004 | Households with internet |
 
-```{r}
+Washington Challenge
 
+```{r}
+wa_internet <- get_acs(
+  geography = "tract",
+  variables = "B28002_004",
+  state = "WA",
+  year = 2023,
+  geometry = TRUE
+)
+
+# Rename column for clarity
+wa_internet <- wa_internet |>
+  rename(broadband = estimate)
+
+# Create popup and tooltip text
+wa_internet$popup <- glue(
+  "<strong>Tract:</strong> {wa_internet$NAME}<br>
+   <strong>Broadband Access:</strong> {wa_internet$broadband} households"
+)
+
+wa_internet$tooltip <- glue(
+  "Tract: {wa_internet$NAME}\nBroadband: {wa_internet$broadband}"
+)
+
+# Create a color scale
+wa_scale <- interpolate_palette(
+  data = wa_internet,
+  column = "broadband",
+  method = "equal",
+  n = 4,
+  palette = viridis
+)
+
+# Create the map
+mapboxgl(bounds = wa_internet) |>
+  add_fill_layer(
+    id = "wa_internet",
+    source = wa_internet,
+    fill_color = wa_scale$expression,
+    fill_opacity = 0.5,
+    popup = "popup",
+    tooltip = "tooltip",
+    hover_options = list(
+      fill_color = "orange",
+      fill_opacity = 1
+    )
+  ) |>
+  add_legend(
+    "Households with Broadband (WA)",
+    values = get_legend_labels(wa_scale),
+    colors = get_legend_colors(wa_scale),
+    type = "continuous"
+  )
 ```
 
 #### California Example
