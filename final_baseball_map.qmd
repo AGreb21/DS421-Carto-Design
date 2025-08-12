@@ -1,0 +1,246 @@
+---
+title: "final_baseball_map"
+format: html
+editor: visual
+---
+
+# Load Libraries
+
+```{r}
+library(shiny)
+library(mapgl)
+library(sf)
+library(dplyr)
+library(readr)
+library(here)
+library(mapboxapi)
+```
+
+# Initial map of stadiums as points
+
+```{r}
+# Load and convert to sf points
+stadiums <- read_csv("data/Major_League_Baseball_Stadiums.csv") %>%
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+
+ui <- fluidPage(
+  titlePanel("MLB Stadiums Map"),
+  sidebarLayout(
+    sidebarPanel(
+      # Optional: add filters later here
+      helpText("Map of MLB stadiums as points")
+    ),
+    mainPanel(
+      mapboxglOutput("stadium_map", height = "700px")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  output$stadium_map <- renderMapboxgl({
+    mapboxgl(bounds = stadiums) |>
+      add_circle_layer(
+        id = "stadiums",
+        source = stadiums,
+        circle_radius = 8,
+        circle_color = "#FF5722",
+        circle_stroke_width = 2,
+        circle_stroke_color = "white"
+      )
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# Adding tooltip
+
+```{r}
+# Load and convert to sf points
+stadiums <- read_csv("data/Major_League_Baseball_Stadiums.csv") %>%
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+  mutate(
+    tooltip_text = paste0(
+      "<b>", NAME, "</b><br>",
+      "Team: ", TEAM, "<br>",
+      "City: ", CITY, ", ", STATE, "<br>",
+      "Capacity: ", CAPACITY
+    )
+  )
+
+ui <- fluidPage(
+  titlePanel("MLB Stadiums Map"),
+  sidebarLayout(
+    sidebarPanel(
+      helpText("Hover over a stadium point to see details.")
+    ),
+    mainPanel(
+      mapboxglOutput("stadium_map", height = "700px")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  output$stadium_map <- renderMapboxgl({
+    mapboxgl(bounds = stadiums, style = mapbox_style("light")) |>
+      add_circle_layer(
+        id = "stadiums",
+        source = stadiums,
+        circle_radius = 8,
+        circle_color = "#FF5722",
+        circle_stroke_width = 2,
+        circle_stroke_color = "white",
+        tooltip = "tooltip_text",
+        popup = "tooltip_text"
+      )
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# Beginning customization of colors
+
+```{r}
+stadiums <- read_csv("data/Major_League_Baseball_Stadiums.csv") %>%
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+  mutate(
+    tooltip_text = paste0(
+      "<b>", NAME, "</b><br>",
+      "Team: ", TEAM, "<br>",
+      "City: ", CITY, ", ", STATE, "<br>",
+      "Capacity: ", CAPACITY
+    ),
+    color = ifelse(LEAGUE == "National", "#1f78b4", "#e31a1c")  # blue for National, red for American
+  )
+
+ui <- fluidPage(
+  titlePanel("MLB Stadiums Map"),
+  sidebarLayout(
+    sidebarPanel(
+      helpText("Hover over a stadium point to see details.")
+    ),
+    mainPanel(
+      mapboxglOutput("stadium_map", height = "700px")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  output$stadium_map <- renderMapboxgl({
+    mapboxgl(bounds = stadiums) |>
+      add_circle_layer(
+        id = "stadiums",
+        source = stadiums,
+        circle_radius = 8,
+        circle_color = get_column("color"),
+        circle_stroke_width = 2,
+        circle_stroke_color = "white",
+        tooltip = "tooltip_text",
+        popup = "tooltip_text"
+      )
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# Creating driving times
+
+```{r}
+# Load stadium data and convert to sf points
+stadiums <- read_csv("data/Major_League_Baseball_Stadiums.csv") %>%
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
+  mutate(
+    tooltip_text = paste0(
+      "<b>", NAME, "</b><br>",
+      "Team: ", TEAM, "<br>",
+      "City: ", CITY, ", ", STATE, "<br>",
+      "Capacity: ", CAPACITY
+    ),
+    color = ifelse(LEAGUE == "National", "#1f78b4", "#e31a1c")  # Blue for National, red for American
+  )
+
+# Extract lon/lat from geometry column (EPSG:4326)
+coords <- sf::st_coordinates(stadiums$geometry)
+lon <- coords[,1]
+lat <- coords[,2]
+
+times <- c(15, 30, 60)
+
+# Generate isochrones safely with error handling
+isochrone_list <- list()
+for (mins in times) {
+  iso_for_time <- lapply(seq_along(lon), function(i) {
+    tryCatch({
+      poly <- mb_isochrone(c(lon[i], lat[i]), profile = "driving", time = mins)
+      poly$minutes <- mins
+      poly$stadium_id <- stadiums$OBJECTID[i]
+      poly
+    }, error = function(e) {
+      message(paste("Error for stadium", i, "time", mins, ":", e$message))
+      NULL
+    })
+  }) %>% compact()
+  
+  if(length(iso_for_time) > 0) {
+    isochrone_list[[as.character(mins)]] <- do.call(rbind, iso_for_time)
+  }
+}
+isochrones <- do.call(rbind, isochrone_list)
+
+# Define colors for isochrones (with some transparency)
+fill_colors <- c(
+  "15" = "#33a02ccc",  # green
+  "30" = "#ffdb4dcc",  # yellow
+  "60" = "#e31a1ccc"   # red
+)
+
+ui <- fluidPage(
+  titlePanel("MLB Stadiums with Drive-Time Isochrones"),
+  mainPanel(
+    mapboxglOutput("stadium_map", height = "700px")
+  )
+)
+
+server <- function(input, output, session) {
+  output$stadium_map <- renderMapboxgl({
+    base_map <- mapboxgl(bounds = stadiums) |>  # default Mapbox style
+      add_circle_layer(
+        id = "stadiums",
+        source = stadiums,
+        circle_radius = 8,
+        circle_color = get_column("color"),
+        circle_stroke_width = 2,
+        circle_stroke_color = "white",
+        tooltip = "tooltip_text",
+        popup = "tooltip_text"
+      )
+    
+    # Add isochrone polygons by time interval if available
+    if (exists("isochrones") && nrow(isochrones) > 0) {
+      for (mins in times) {
+        polys <- isochrones %>% filter(minutes == mins)
+        
+        if (nrow(polys) > 0) {
+          base_map <- base_map |>
+            add_source(id = paste0("iso_source_", mins), data = polys) |>
+            add_fill_layer(
+              id = paste0("iso_layer_", mins),
+              source = paste0("iso_source_", mins),
+              fill_color = fill_colors[as.character(mins)],
+              fill_opacity = 0.3
+            )
+        }
+      }
+    } else {
+      message("No isochrone polygons to display")
+    }
+    
+    base_map
+  })
+}
+
+shinyApp(ui, server)
+
+```
