@@ -1,0 +1,148 @@
+---
+title: "my_assignment_2"
+format: html
+editor: visual
+---
+
+# Load Libraries
+
+```{r}
+library(shiny)
+library(mapgl)
+library(here)
+library(sf)
+library(viridis)
+library(tidyverse)
+
+```
+
+# First Version
+
+```{r}
+county_data <- st_read(here("data/county_data.gpkg"))
+languages <- sort(unique(county_data$language))
+
+ui <- fluidPage(
+  titlePanel("Language Speakers in the United States by County"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("language", "Select a language:", choices = languages, selected = "Spanish")
+    ),
+    mainPanel(
+      mapboxglOutput("county_map", height = "800px")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  output$county_map <- renderMapboxgl({
+    filtered_data <- county_data %>% filter(language == input$language)
+
+    continuous_scale <- interpolate_palette(
+      data = filtered_data,
+      column = "percent_speakers",
+      method = "quantile",
+      n = 5,
+      palette = viridis
+    )
+
+    mapboxgl(bounds = filtered_data, options = NULL) |>
+      add_fill_layer(
+        id = "counties",
+        source = filtered_data,
+        fill_color = continuous_scale$expression,
+        fill_opacity = 0.8
+        )
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# Added Legend
+
+```{r}
+county_data <- st_read(here("data/county_data.gpkg"))
+languages <- sort(unique(county_data$language))
+
+ui <- fluidPage(
+  titlePanel("Language Speakers in the United States by County"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("language", "Select a language:", choices = languages, selected = "Spanish")
+    ),
+    mainPanel(
+      # Wrap map output in relative container for legend positioning
+      div(style = "position: relative;",
+          mapboxglOutput("county_map", height = "800px"),
+
+          # Legend box in top-left
+          div(
+            style = "
+              position: absolute;
+              top: 30px;
+              left: 30px;
+              width: 220px;
+              background: white;
+              padding: 10px;
+              border-radius: 5px;
+              box-shadow: 0 0 5px rgba(0,0,0,0.3);
+              font-size: 12px;
+              z-index: 1000;
+              user-select: none;
+            ",
+            tags$b("Percent Speakers"),
+            div(
+              style = "height: 20px; width: 100%; 
+                       background: linear-gradient(to right,
+                       #440154, #482878, #3E4989, #31688E, #26828E, 
+                       #1F9E89, #35B779, #6DCD59, #B4DD2C, #FDE725);
+                       margin-top: 5px;"
+            ),
+            div(
+              style = "display: flex; justify-content: space-between; margin-top: 2px;",
+              tags$span("0"),
+              tags$span("0.5"),
+              tags$span("1"),
+              tags$span("2"),
+              tags$span("5"),
+              tags$span("10"),
+              tags$span("20"),
+              tags$span("50")
+            )
+          )
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  output$county_map <- renderMapboxgl({
+    filtered_data <- county_data %>% filter(language == input$language)
+
+    continuous_scale <- interpolate_palette(
+      data = filtered_data,
+      column = "percent_speakers",
+      method = "quantile",
+      n = 5,
+      palette = viridis
+    )
+
+    mapboxgl(bounds = filtered_data, options = NULL) |>
+      add_fill_layer(
+        id = "counties",
+        source = filtered_data,
+        fill_color = continuous_scale$expression,
+        fill_opacity = 0.8
+      )
+  })
+}
+
+shinyApp(ui, server)
+```
+
+# Adding tooltip (maybe later)
+
+```{r}
+
+```
