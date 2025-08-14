@@ -4,9 +4,8 @@ format: html
 editor: visual
 ---
 
-# Load Libraries
-
 ```{r}
+# Load Libraries
 library(shiny)
 library(mapgl)
 library(sf)
@@ -14,138 +13,8 @@ library(dplyr)
 library(readr)
 library(here)
 library(mapboxapi)
+library(purrr)
 ```
-
-# Initial map of stadiums as points
-
-```{r}
-# Load and convert to sf points
-stadiums <- read_csv("data/Major_League_Baseball_Stadiums.csv") %>%
-  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
-
-ui <- fluidPage(
-  titlePanel("MLB Stadiums Map"),
-  sidebarLayout(
-    sidebarPanel(
-      # Optional: add filters later here
-      helpText("Map of MLB stadiums as points")
-    ),
-    mainPanel(
-      mapboxglOutput("stadium_map", height = "700px")
-    )
-  )
-)
-
-server <- function(input, output, session) {
-  output$stadium_map <- renderMapboxgl({
-    mapboxgl(bounds = stadiums) |>
-      add_circle_layer(
-        id = "stadiums",
-        source = stadiums,
-        circle_radius = 8,
-        circle_color = "#FF5722",
-        circle_stroke_width = 2,
-        circle_stroke_color = "white"
-      )
-  })
-}
-
-shinyApp(ui, server)
-```
-
-# Adding tooltip
-
-```{r}
-# Load and convert to sf points
-stadiums <- read_csv("data/Major_League_Baseball_Stadiums.csv") %>%
-  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
-  mutate(
-    tooltip_text = paste0(
-      "<b>", NAME, "</b><br>",
-      "Team: ", TEAM, "<br>",
-      "City: ", CITY, ", ", STATE, "<br>",
-      "Capacity: ", CAPACITY
-    )
-  )
-
-ui <- fluidPage(
-  titlePanel("MLB Stadiums Map"),
-  sidebarLayout(
-    sidebarPanel(
-      helpText("Hover over a stadium point to see details.")
-    ),
-    mainPanel(
-      mapboxglOutput("stadium_map", height = "700px")
-    )
-  )
-)
-
-server <- function(input, output, session) {
-  output$stadium_map <- renderMapboxgl({
-    mapboxgl(bounds = stadiums, style = mapbox_style("light")) |>
-      add_circle_layer(
-        id = "stadiums",
-        source = stadiums,
-        circle_radius = 8,
-        circle_color = "#FF5722",
-        circle_stroke_width = 2,
-        circle_stroke_color = "white",
-        tooltip = "tooltip_text",
-        popup = "tooltip_text"
-      )
-  })
-}
-
-shinyApp(ui, server)
-```
-
-# Beginning customization of colors
-
-```{r}
-stadiums <- read_csv("data/Major_League_Baseball_Stadiums.csv") %>%
-  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326) %>%
-  mutate(
-    tooltip_text = paste0(
-      "<b>", NAME, "</b><br>",
-      "Team: ", TEAM, "<br>",
-      "City: ", CITY, ", ", STATE, "<br>",
-      "Capacity: ", CAPACITY
-    ),
-    color = ifelse(LEAGUE == "National", "#1f78b4", "#e31a1c")  # blue for National, red for American
-  )
-
-ui <- fluidPage(
-  titlePanel("MLB Stadiums Map"),
-  sidebarLayout(
-    sidebarPanel(
-      helpText("Hover over a stadium point to see details.")
-    ),
-    mainPanel(
-      mapboxglOutput("stadium_map", height = "700px")
-    )
-  )
-)
-
-server <- function(input, output, session) {
-  output$stadium_map <- renderMapboxgl({
-    mapboxgl(bounds = stadiums) |>
-      add_circle_layer(
-        id = "stadiums",
-        source = stadiums,
-        circle_radius = 8,
-        circle_color = get_column("color"),
-        circle_stroke_width = 2,
-        circle_stroke_color = "white",
-        tooltip = "tooltip_text",
-        popup = "tooltip_text"
-      )
-  })
-}
-
-shinyApp(ui, server)
-```
-
-# Creating driving times and legend
 
 ```{r}
 # Read stadiums and prep attributes
