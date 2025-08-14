@@ -1,3 +1,6 @@
+Sys.setenv(MAPBOX_PUBLIC_TOKEN = "pk.eyJ1IjoiY29ubm9yZmx5bm4iLCJhIjoiY2x5cWFtZzk0MGU4MzJqb2F0a2w1bGJkZiJ9.fB81ysj5JOrG16upKvzk4A
+")
+
 # Load Libraries
 library(shiny)
 library(mapgl)
